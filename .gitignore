@@ -10,6 +10,7 @@
 pyvenv.cfg
 .venv
 pip-selfcheck.json
+__pycache__
 
 
 # sphinx build folder
@@ -53,3 +54,7 @@ Thumbs.db
 # Editor backup files #
 #######################
 *~
+
+# Ase #
+#######################
+*.traj

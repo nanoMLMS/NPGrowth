@@ -1,5 +1,6 @@
 import sys
 import toml
+from ase import units
 
 class SimulationParameters:
     """
@@ -24,21 +25,11 @@ class SimulationParameters:
         The number of steps for the molecular dynamics simulation.
     write_interval : int
         The interval at which the simulation data will be written to a file.
-
-    Methods:
-    --------
-    __init__(filename: str):
-        Initializes the object by loading parameters from the given TOML file.
-    
-    __get() -> dict:
-        Reads and parses the TOML file containing the parameters. Returns a dictionary 
-        of parameters. Exits the program if the file cannot be opened.
-
-    __check():
-        Placeholder for checking the validity of parameters.
     """
 
     def __init__(self, filename):
+        self.__filename = filename
+
         parameters = self.__get()
 
         self.n_atoms = parameters['n_atoms']
@@ -46,11 +37,9 @@ class SimulationParameters:
 
         md_params = parameters['dynamics']
         self.temperature = md_params['temperature']
-        self.timestep = md_params['timestep']
+        self.timestep = md_params['timestep'] * units.fs
         self.steps = md_params['steps']
         self.write_interval = md_params['write_interval']
-
-        self.__filename = filename
 
     def __get(self):
         try:
@@ -67,6 +56,19 @@ class SimulationParameters:
     def __check():
         # TODO check parameters
         print()
+    
+    def __str__(self):
+        """
+        Returns a readable string representation of the object for printing.
+        """
+        return (f"Simulation Parameters:\n"
+                f"  Number of Atoms: {self.n_atoms}\n"
+                f"  Radius Offset: {self.radius_offset} Å\n"
+                f"  Temperature: {self.temperature} K\n"
+                f"  Timestep: {self.timestep} fs\n"
+                f"  Steps: {self.steps}\n"
+                f"  Write Interval: {self.write_interval} steps\n"
+                f"  Parameter File: {self.__filename}")
 
 
 from ase.io import read
@@ -90,8 +92,6 @@ class System:
 
     Methods:
     --------
-    __init__():
-        Initializes the object by loading the atoms from the given xyz file.
     max_distance():
         Calculate the maximum distance between any two atoms in the system.
     view():
@@ -101,6 +101,13 @@ class System:
     def __init__(self, filename):
         # TODO check if file exists
         self.atoms = read(filename)
+        
+        # Set unit cell for the system. Needed for asap calculator, must enclose all the system
+        # for it to work.
+        cell_size = self.max_distance()
+        self.atoms.set_cell((cell_size, cell_size, cell_size))
+        self.atoms.center()
+
 
     def max_distance(self):
         """

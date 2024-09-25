@@ -2,7 +2,7 @@ n_atoms = 400 # Number of atoms to deposit
 radius_offset = 3.61000 # Angstrom
 
 [dynamics]
-temperature = 300 # Kelvin
+temperature = 1000 # Kelvin
 timestep = 5 # Femtoseconds
-steps = 1000 # Number of steps
+steps = 100000 # Number of steps
 write_interval = 100
