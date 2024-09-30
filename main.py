@@ -1,19 +1,20 @@
+from ase import Atoms
+import numpy as np
 import utils
-
 import dynamics
-from ase.visualize import view
-
-from asap3.io.trajectory import Trajectory # Used trajectory from asap3 module
 
 system = utils.System('CuNP.xyz')
-
 parameters = utils.SimulationParameters('parameters.toml')
 
-trajectory = Trajectory("output.traj", 'w', system.atoms)
+subsystem_indices = list(range(len(system.atoms)))
 
-dynamics.langevin(system, parameters, trajectory, showProgress=True)
+for i in range(50):
+    position = system.center_of_mass(subsystem_indices) + utils.get_position(20)
+    system.add_atom(parameters.temperature, system.center_of_mass(subsystem_indices), position)
 
-trajectory.close()
-trajectory = Trajectory('output.traj', 'r')
-view(trajectory)
-trajectory.close()
+
+    while system.max_atom_separation() > 3.7:
+        dynamics.langevin(system, parameters, showProgress=False)
+    print(i)
+
+system.view_trajectory()
