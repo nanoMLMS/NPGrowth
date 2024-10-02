@@ -100,16 +100,22 @@ class System:
 
     Methods:
     --------
-    max_distance():
-        Calculate the maximum distance between any two atoms in the system.
-    view():
+    max_distance_between():
+        Return maximum distance between any two atoms in the system.
+    max_distance_from(position):
+        Return maximum distance of the system from a given position.
+    view(indices = None):
        Visualize the atoms with the default ase viewer.
+    view_trajectory():
+       Visualize the atoms trajectory with the default ase viewer.
     temperature():
        Returns the temperature of the system.
-    center_of_mass():
+    center_of_mass(indices = None):
         Return center of mass of the system.
     add(atom)
         Add atom to the system.
+    add_atom(temperature, direction, position, element = None):
+        Add atom to the system with given initial temperature, direction, position.
     open_trajectory():
         Returns trajectory associated with the system.
     max_atom_separation():
@@ -121,7 +127,7 @@ class System:
         self.atoms = read(filename)
         
         # Set unit cell for the system. Needed for asap calculator.
-        cell_size = self.max_distance()
+        cell_size = self.max_distance_between()
         self.atoms.set_cell((cell_size, cell_size, cell_size))
         self.atoms.center()
 
@@ -130,24 +136,38 @@ class System:
         # track if already been written
         self.__first_time = True
 
-    def max_distance(self):
+    def max_distance_between(self):
         """
         Calculate the maximum distance between any two atoms in the system.
-
-        Parameters:
-        -----------
-        atoms : ASE Atoms object
-            The system of atoms for which to calculate the maximum distance.
 
         Returns:
         --------
         float
-            The maximum distance between two atoms.
+            The maximum distance between two atoms in the system.
         """
         positions = self.atoms.get_positions()  # Get atomic positions
         distances = pdist(positions)  # Calculate all pairwise distances
         max_dist = np.max(distances)  # Find the maximum distance
         return max_dist
+    
+    def max_distance_from(self, position):
+        """
+        Calculate the distance of the further atom of the system from the given position.
+
+        Parameters:
+        -----------
+        position : numpy.ndarray
+            A 3D vector (x, y, z) representing the given position.
+
+        Returns:
+        --------
+        float
+            The maximum distance of the system of atoms from given position.
+        """
+
+        distances = np.linalg.norm(self.atoms.get_positions() - position, axis=1)
+
+        return np.max(distances)
 
     def view(self, indices = None):
         """
@@ -235,6 +255,11 @@ class System:
         """
         Compute max distance between atoms.
 
+        This helps determine if any atoms are detached from the structure. 
+        For example, we can check if max_distance_between() returns a value greater than the lattice constant.
+        If the distance exceeds the lattice constant, it indicates that one or more atoms are detached
+        from the main structure.
+
         Returns:
         float: Max distance between atoms in Angstrom
         """
@@ -288,15 +313,15 @@ def get_position(radius):
         A 3D vector (x, y, z) representing the random position in Cartesian coordinates.
     """
     
-    # Fixed colatitude angle (theta) = pi/2 (the equator plane in spherical coordinates)
-    theta = np.random.uniform(0, np.pi)
+    # # Fixed colatitude angle (theta) = pi/2 (the equator plane in spherical coordinates)
+    # theta = np.random.uniform(0, np.pi)
     
-    # Random longitude angle (phi) uniformly distributed between 0 and 2*pi
-    phi = np.random.uniform(0, 2 * np.pi)
+    # # Random longitude angle (phi) uniformly distributed between 0 and 2*pi
+    # phi = np.random.uniform(0, 2 * np.pi)
     
-    # Convert spherical coordinates (theta, phi) to Cartesian coordinates (x, y, z)
-    x = radius * np.sin(theta) * np.cos(phi)
-    y = radius * np.sin(theta) * np.sin(phi)
-    z = radius * np.cos(theta)  # z = 0 because theta = pi/2
+    # # Convert spherical coordinates (theta, phi) to Cartesian coordinates (x, y, z)
+    # x = radius * np.sin(theta) * np.cos(phi)
+    # y = radius * np.sin(theta) * np.sin(phi)
+    # z = radius * np.cos(theta)  # z = 0 because theta = pi/2
 
-    return np.array([x, y, z])
+    return np.array([0, 0, radius])

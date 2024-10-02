@@ -52,7 +52,7 @@ def langevin(system, parameters, showProgress=False):
     >>> import dynamics
     >>> system = utils.System('file.xyz')
     >>> parameters = utils.SimulationParameters('parameters.toml')
-    >>> dynamics.langevin(system, parameters, trajectory, showProgress=True)
+    >>> dynamics.langevin(system, parameters, showProgress=True)
     """
 
     # Black box that compute forces and energies
