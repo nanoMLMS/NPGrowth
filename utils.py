@@ -73,7 +73,7 @@ class SimulationParameters:
                 f"  Parameter File: {self.__filename}")
 
 
-from ase.io import read
+from ase.io import read, write
 from ase.visualize import view
 import numpy as np
 import tempfile
@@ -120,6 +120,8 @@ class System:
         Returns trajectory associated with the system.
     max_atom_separation():
         Returns the maximum separation between atoms in the system.
+    save_trajectory(filename):
+        Save the trajectory to a file with the given name. Works with xyz extension.
     """
 
     def __init__(self, filename):
@@ -277,6 +279,15 @@ class System:
 
         return max(min_distances)
     
+    def save_trajectory(self, filename):
+        """
+        Save the trajectory to a file with the given name. Works with xyz extension, others working
+        extensions can be found on ase library documentation. This method use the write method from
+        ase.
+        """
+        traj = Trajectory(self.trajectory_file.name, 'r')
+        write(filename, traj)
+        traj.close()
 
 def thermal_velocity(mass, temperature):
     """
@@ -313,15 +324,39 @@ def get_position(radius):
         A 3D vector (x, y, z) representing the random position in Cartesian coordinates.
     """
     
-    # # Fixed colatitude angle (theta) = pi/2 (the equator plane in spherical coordinates)
-    # theta = np.random.uniform(0, np.pi)
+    # Fixed colatitude angle (theta) = pi/2 (the equator plane in spherical coordinates)
+    theta = np.random.uniform(0, np.pi)
     
-    # # Random longitude angle (phi) uniformly distributed between 0 and 2*pi
-    # phi = np.random.uniform(0, 2 * np.pi)
+    # Random longitude angle (phi) uniformly distributed between 0 and 2*pi
+    phi = np.random.uniform(0, 2 * np.pi)
     
-    # # Convert spherical coordinates (theta, phi) to Cartesian coordinates (x, y, z)
-    # x = radius * np.sin(theta) * np.cos(phi)
-    # y = radius * np.sin(theta) * np.sin(phi)
-    # z = radius * np.cos(theta)  # z = 0 because theta = pi/2
+    # Convert spherical coordinates (theta, phi) to Cartesian coordinates (x, y, z)
+    x = radius * np.sin(theta) * np.cos(phi)
+    y = radius * np.sin(theta) * np.sin(phi)
+    z = radius * np.cos(theta)  # z = 0 because theta = pi/2
 
-    return np.array([0, 0, radius])
+    return np.array([x, y, z])
+
+def spherical_to_cartesian(r, theta, phi):
+    """
+    Convert spherical coordinates (r, theta, phi) to Cartesian coordinates (x, y, z).
+    
+    Parameters:
+    -----------
+    r : float
+        The radial distance from the origin (radius).
+    theta : float
+        The polar angle (in radians), measured from the positive z-axis.
+    phi : float
+        The azimuthal angle (in radians), measured from the positive x-axis in the xy-plane.
+    
+    Returns:
+    --------
+    numpy.ndarray
+        A 3D vector (x, y, z) representing the random position in Cartesian coordinates.
+    """
+    x = r * np.sin(theta) * np.cos(phi)
+    y = r * np.sin(theta) * np.sin(phi)
+    z = r * np.cos(theta)
+    
+    return np.array([x, y, z])

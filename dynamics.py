@@ -63,7 +63,7 @@ def langevin(system, parameters, showProgress=False):
 
     traj = system.open_trajectory()
     dyn.attach(traj.write, interval=parameters.write_interval)
-    # dyn.attach(remove_rotation, atoms=system.atoms)
+    dyn.attach(remove_rotation, atoms=system.atoms)
     
     # If showProgress set to True show progress with tqdm lib
     if showProgress:
