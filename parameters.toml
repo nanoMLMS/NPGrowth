@@ -1,5 +1,5 @@
 [growth]
-n_atoms = 200 # Number of atoms to deposit
+n_atoms = 20 # Number of atoms to deposit
 radius_offset = 4 # Angstrom
 
 [dynamics]

@@ -75,6 +75,7 @@ class SimulationParameters:
 
 from ase.io import read, write
 from ase.visualize import view
+import subprocess
 import numpy as np
 import tempfile
 from ase import Atoms
@@ -104,10 +105,10 @@ class System:
         Return maximum distance between any two atoms in the system.
     max_distance_from(position):
         Return maximum distance of the system from a given position.
-    view(indices = None):
-       Visualize the atoms with the default ase viewer.
-    view_trajectory():
-       Visualize the atoms trajectory with the default ase viewer.
+    view(viewer=None):
+       Visualize the atoms with the default ase viewer if no other viewer specified. 
+    view_trajectory(viewer=None):
+       Visualize the atoms trajectory with the default ase viewer if no other viewer specified.
     temperature():
        Returns the temperature of the system.
     center_of_mass(indices = None):
@@ -171,19 +172,48 @@ class System:
 
         return np.max(distances)
 
-    def view(self, indices = None):
+    def view(self, viewer=None):
         """
-        Visualize the atoms with the default ase viewer.
+        Visualize the atoms with the default ase viewer if no other viewer specified.
+
+        Notes
+        -----
+        - If ovito viewer is specified it must be installed. This function use subprocess.run(ovito).
+        - Using ovito viewer stops the program execution while the window is open.
         """
-        indices = indices if indices is not None else np.arange(len(self.atoms))
-        view(self.atoms[indices])
+        if viewer:
+            if viewer == 'ovito':
+                with tempfile.NamedTemporaryFile(suffix='.xyz', delete=True) as temp_file:
+                    write(temp_file.name, self.atoms)
+                    subprocess.run(['ovito', temp_file.name])
+            else:
+                print('only ovito viewer supported, using default ase viewer')
+                view(self.atoms)
+        else: 
+            view(self.atoms)
     
-    def view_trajectory(self):
+    def view_trajectory(self, viewer=None):
         """
-        Visualize the trajectory with the default ase viewer.
+        Visualize the atoms trajectory with the default ase viewer if no other viewer specified.
+
+        Notes
+        -----
+        - If ovito viewer is specified it must be installed. This function use subprocess.run(ovito).
+        - Using ovito viewer stops the program execution while the window is open.
         """
         traj = Trajectory(self.trajectory_file.name, 'r')
-        view(traj)
+
+        if viewer:
+            if viewer == 'ovito':
+                with tempfile.NamedTemporaryFile(suffix='.xyz', delete=True) as temp_file:
+                    write(temp_file.name, traj)
+                    subprocess.run(['ovito', temp_file.name])
+            else:
+                print('only ovito viewer supported, using default ase viewer')
+                view(self.atoms)
+        else:
+            view(traj)
+
         traj.close()
 
     def temperature(self):

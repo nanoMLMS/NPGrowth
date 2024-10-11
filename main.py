@@ -6,6 +6,8 @@ import dynamics
 system = utils.System('Cu675.xyz')
 parameters = utils.SimulationParameters('parameters.toml')
 
+system.view(viewer='ovito')
+
 # termalize
 parameters.steps = 1000
 dynamics.langevin(system, parameters)
@@ -32,11 +34,11 @@ for i in range(parameters.n_atoms):
         dynamics.langevin(system, parameters)
         count += 1
         if count > 10:
-            system.view_trajectory()
+            system.view_trajectory(viewer='ovito')
             system.save_trajectory('traj.xyz')
             print('probably detached atom')
             sys.exit()
     print(i)
 
-system.view_trajectory()
+system.view_trajectory(viewer='ovito')
 system.save_trajectory('traj.xyz')
