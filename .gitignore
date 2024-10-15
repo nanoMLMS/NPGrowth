@@ -62,3 +62,7 @@ Thumbs.db
 # Trajectories #
 #######################
 *.xyz
+
+# Lammps #
+#######################
+*.lammps
