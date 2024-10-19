@@ -13,6 +13,7 @@ cd external/lammps/src
 # Build LAMMPS with desired packages (modify this to suit your needs)
 echo "Building LAMMPS..."
 make yes-PYTHON
+make yes-MANYBODY
 make mode=shared serial
 
 # Install Python bindings for LAMMPS

@@ -5,5 +5,5 @@ radius_offset = 4 # Angstrom
 [dynamics]
 temperature = 300 # Kelvin
 timestep = 5 # Femtoseconds
-steps = 300 # Number of steps
+steps = 30000 # Number of steps
 write_interval = 10

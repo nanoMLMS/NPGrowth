@@ -72,74 +72,56 @@ class SimulationParameters:
                 f"  Write Interval: {self.write_interval} steps\n"
                 f"  Parameter File: {self.__filename}")
 
+from enum import Enum
 
+class Algorithm(Enum):
+    langevin = "langevin"
+    verlet = "verlet"
+
+
+from lammps import PyLammps
 from ase.io import read, write
-from ase.visualize import view
-import subprocess
-import numpy as np
-import tempfile
 from ase import Atoms
-from scipy.spatial.distance import pdist, cdist
-from asap3.io.trajectory import Trajectory # Used trajectory from asap3 module
+import tempfile
+import numpy as np
+from scipy.spatial.distance import pdist
 
 class System:
-    """
-    This class is responsible for loading and storing the atoms and trajectory.
-
-    Parameters:
-    -----------
-    filename : str
-        The path to the xyz file containing the initial atoms positions.
-
-    Attributes:
-    -----------
-    atoms : ASE Atoms object
-        The group of atoms in the system.
-    
-    trajectory_file : TemporaryFile
-        Temporary file for storing the trajectory of the system.
-
-    Methods:
-    --------
-    max_distance_between():
-        Return maximum distance between any two atoms in the system.
-    max_distance_from(position):
-        Return maximum distance of the system from a given position.
-    view(viewer=None):
-       Visualize the atoms with the default ase viewer if no other viewer specified. 
-    view_trajectory(viewer=None):
-       Visualize the atoms trajectory with the default ase viewer if no other viewer specified.
-    temperature():
-       Returns the temperature of the system.
-    center_of_mass(indices = None):
-        Return center of mass of the system.
-    add(atom)
-        Add atom to the system.
-    add_atom(temperature, direction, position, element = None):
-        Add atom to the system with given initial temperature, direction, position.
-    open_trajectory():
-        Returns trajectory associated with the system.
-    max_atom_separation():
-        Returns the maximum separation between atoms in the system.
-    save_trajectory(filename):
-        Save the trajectory to a file with the given name. Works with xyz extension.
-    """
-
     def __init__(self, filename):
-        # TODO check if file exists
-        self.atoms = read(filename)
+        # Initialize LAMMPS interface
+        self.lmp = PyLammps()
         
-        # Set unit cell for the system. Needed for asap calculator.
-        cell_size = self.max_distance_between()
-        self.atoms.set_cell((cell_size, cell_size, cell_size))
-        self.atoms.center()
+        # Read atoms from xyz file
+        atoms = read(filename)
 
-        # Where to store the trajectory associated with the system
-        self.trajectory_file = tempfile.NamedTemporaryFile(delete=False)  # Binary mode file for the trajectory
-        # track if already been written
-        self.__first_time = True
+        # Initialization
+        self.lmp.units("metal")
+        self.lmp.boundary("s s s")  # Shrink-wrap boundaries
+        self.lmp.atom_style("atomic")
 
-    def max_distance_between(self):
+        # System definition
+        positions = atoms.get_positions()  # Get atomic positions
+        min_pos = np.min(positions, axis=0)
+        max_pos = np.max(positions, axis=0)
+        buffer = 10.0
+        cell_x = max_pos[0] - min_pos[0] + buffer
+        cell_y = max_pos[1] - min_pos[1] + buffer
+        cell_z = max_pos[2] - min_pos[2] + buffer
+        atoms.set_cell([cell_x, cell_y, cell_z])
+        atoms.center()
+        self.tmp = tempfile.NamedTemporaryFile(delete=False)
+        write(self.tmp.name, atoms, format='lammps-data')
+        self.lmp.read_data(self.tmp.name)
+
+        # Simulation settings
+        self.lmp.mass(1, 63.546)  # Set mass for Copper (atom type 1)
+        self.lmp.pair_style("eam")
+        self.lmp.pair_coeff('*', '*', 'Cu_u3.eam')
+
+        # Initially, no MD algorithm is set for atoms
+        self.md_algorithm = [None] * len(atoms)
+    
+    def get_max_diameter(self):
         """
         Calculate the maximum distance between any two atoms in the system.
 
@@ -150,174 +132,64 @@ class System:
         """
         positions = self.atoms.get_positions()  # Get atomic positions
         distances = pdist(positions)  # Calculate all pairwise distances
-        max_dist = np.max(distances)  # Find the maximum distance
-        return max_dist
+        max_rad = np.max(distances)  # Find the maximum distance
+        return max_rad
     
-    def max_distance_from(self, position):
+    def add_atom(self, position):
         """
-        Calculate the distance of the further atom of the system from the given position.
-
-        Parameters:
-        -----------
-        position : numpy.ndarray
-            A 3D vector (x, y, z) representing the given position.
-
-        Returns:
-        --------
-        float
-            The maximum distance of the system of atoms from given position.
-        """
-
-        distances = np.linalg.norm(self.atoms.get_positions() - position, axis=1)
-
-        return np.max(distances)
-
-    def view(self, viewer=None):
-        """
-        Visualize the atoms with the default ase viewer if no other viewer specified.
-
-        Notes
-        -----
-        - If ovito viewer is specified it must be installed. This function use subprocess.run(ovito).
-        - Using ovito viewer stops the program execution while the window is open.
-        """
-        if viewer:
-            if viewer == 'ovito':
-                with tempfile.NamedTemporaryFile(suffix='.xyz', delete=True) as temp_file:
-                    write(temp_file.name, self.atoms)
-                    subprocess.run(['ovito', temp_file.name])
-            else:
-                print('only ovito viewer supported, using default ase viewer')
-                view(self.atoms)
-        else: 
-            view(self.atoms)
-    
-    def view_trajectory(self, viewer=None):
-        """
-        Visualize the atoms trajectory with the default ase viewer if no other viewer specified.
-
-        Notes
-        -----
-        - If ovito viewer is specified it must be installed. This function use subprocess.run(ovito).
-        - Using ovito viewer stops the program execution while the window is open.
-        """
-        traj = Trajectory(self.trajectory_file.name, 'r')
-
-        if viewer:
-            if viewer == 'ovito':
-                with tempfile.NamedTemporaryFile(suffix='.xyz', delete=True) as temp_file:
-                    write(temp_file.name, traj)
-                    subprocess.run(['ovito', temp_file.name])
-            else:
-                print('only ovito viewer supported, using default ase viewer')
-                view(self.atoms)
-        else:
-            view(traj)
-
-        traj.close()
-
-    def temperature(self):
-        """
-        Return temperature of the system calculated from the equipartition theorem equation.
-        """
-        return self.atoms.get_temperature()
-
-    def center_of_mass(self, indices = None):
-        """
-        Return center of mass of the system.
-        """
-        indices = indices if indices is not None else np.arange(len(self.atoms))
-        positions = self.atoms.get_positions()[indices]
-        masses = self.atoms.get_masses()[indices]
-        total_mass = np.sum(masses)
-        com = np.sum(positions.T * masses, axis=1) / total_mass
-        return com
-
-    def add(self, atom):
-        """
-        Add atom to the system.
-
+        Adds a new atom to the system at the given position, ensuring the box is large enough.
+        
         Parameters
         ----------
-        atom : Ase Atom object
-            Atom to be added.
+        position : list or array-like
+            The position (x, y, z) where the new atom will be placed (in box units).
         """
-        self.atoms += atom
-    
-    def add_atom(self, temperature, direction, position, element = None):
-        """
-        Add atom to the system.
-
-        Parameters
-        ----------
-        temperature : float
-            Temperature of the atom to be added. This is converted to the velocity of the atom.
-        direction : numpy.ndarray
-            A 3D vector (x, y, z) representing the target of the atom.
-        position : umpy.ndarray
-            A 3D vector (x, y, z) representing the position of the atom that will be added.
-        element : string
-            Optional chemical symbol of the atom to be added. If not specified and if all the atoms
-            in the system have same chemical symbol, this will be chosen.
-        """
-        if element == None:
-            elements = self.atoms.get_chemical_symbols()
-            if all(i == elements[0] for i in elements):
-                element = elements[0]
-            else:
-                print('No element specified and not unique element in system')
-                sys.exit()
-        atom = Atoms(element, positions=[position])
-        velocity_direction = eigen_vector(position, direction)
-        velocity = thermal_velocity(atom.get_masses()[0], temperature) * velocity_direction
-        atom.set_velocities([velocity])
-        self.add(atom)
-    
-    def open_trajectory(self):
-        """Open the trajectory in 'w' mode the first time, then 'a' mode."""
-        if self.__first_time:
-            mode = 'w'  # First time, so write mode
-            self.__first_time = False  # Update flag
+        # Expand the box if the atom's position is outside the current bounds
+        
+        # Add a new atom using PyLammps create_atoms method
+        self.lmp.create_atoms(1, 'single', position[0], position[1], position[2], 'units', 'box')
+        
+        # Check if an atom was successfully created
+        new_atom_count = self.lmp.get_natoms()
+        if new_atom_count <= len(self.atoms):
+            print("Error: No atom created. Make sure the position is inside the box.")
         else:
-            mode = 'a'  # Subsequent calls use append mode
+            # Update the ASE atoms object to keep track of the new atom
+            self.atoms += Atoms('Cu', positions=[position])  # Example with Copper atom
         
-        return Trajectory(self.trajectory_file.name, mode, self.atoms)
+        # Append None to the md_algorithm list for the new atom
+        self.md_algorithm.append(None)
     
-    def max_atom_separation(self):
-        """
-        Compute max distance between atoms.
+    def __getitem__(self, key):
+        """Enable slicing, so we can select specific atoms."""
+        return self.atoms[key]
 
-        This helps determine if any atoms are detached from the structure. 
-        For example, we can check if max_distance_between() returns a value greater than the lattice constant.
-        If the distance exceeds the lattice constant, it indicates that one or more atoms are detached
-        from the main structure.
-
-        Returns:
-        float: Max distance between atoms in Angstrom
-        """
-        positions = self.atoms.get_positions()
-        n = len(self.atoms)
-        
-        # Compute pairwise distances
-        pairwise_distances = cdist(positions, positions)
-        
-        # Set diagonal (self-distances) to infinity so they don't interfere with finding the minimum
-        np.fill_diagonal(pairwise_distances, np.inf)
-
-        # Find the minimum distance for each atom, excluding the self-distance
-        min_distances = np.min(pairwise_distances, axis=1)
-
-        return max(min_distances)
+    def set_algorithm(self, indices, algorithm):
+        """Assign MD algorithm to specific atoms."""
+        for i in indices:
+            self.md_algorithm[i] = algorithm
     
-    def save_trajectory(self, filename):
-        """
-        Save the trajectory to a file with the given name. Works with xyz extension, others working
-        extensions can be found on ase library documentation. This method use the write method from
-        ase.
-        """
-        traj = Trajectory(self.trajectory_file.name, 'r')
-        write(filename, traj)
-        traj.close()
+    def evolve(self, parameters):
+        """Run the MD simulation using LAMMPS based on the specified parameters."""
+        
+        # Set MD algorithms for different atom groups
+        if Algorithm.langevin in self.md_algorithm:
+            group_langevin = "group langevin id " + " ".join(str(i+1) for i, algo in enumerate(self.md_algorithm) if algo == Algorithm.langevin)
+            self.lmp.command(group_langevin)
+            self.lmp.fix('lngnve', 'langevin', 'nve')
+            self.lmp.fix('lnglng', "langevin", "langevin", 300.0, 300.0, 0.1, 12345)
+
+        if Algorithm.verlet in self.md_algorithm:
+            group_verlet = "group verlet id " + " ".join(str(i+1) for i, algo in enumerate(self.md_algorithm) if algo == Algorithm.verlet)
+            self.lmp.command(group_verlet)
+            self.lmp.fix('vrl', "verlet", "nve")
+        
+        # Save trajectory
+        self.lmp.dump('mydmp', 'all', 'atom', 100, 'dump.lammpstrj')
+
+        # Set the time step and run the simulation
+        self.lmp.timestep(parameters.timestep)
+        self.lmp.run(parameters.steps)
 
 def thermal_velocity(mass, temperature):
     """
@@ -328,7 +200,6 @@ def thermal_velocity(mass, temperature):
     # Calculate the velocity corresponding to the temperature
     # v = sqrt((3 * kB * T) / m)
     return np.sqrt((3 * units.kB * temperature) / mass)
-
 
 def eigen_vector(position, target):
     """
