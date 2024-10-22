@@ -140,7 +140,6 @@ class System:
         atom_pos = [pos + self.get_center_of_mass() for pos in atom_pos]
         positions = self.get_positions()
         positions = np.vstack((positions, atom_pos)) # Add the new atom positions to the already present atom's positions
-        print('position computed')
 
         min_coords = positions.min(axis=0) # Min coordinate of the positions
         max_coords = positions.max(axis=0) # Max coordinate of the positions
@@ -148,14 +147,13 @@ class System:
         # Expand the simulation box so to include newly added atom and change the boundary to fixed (neccesary when creating new atoms)
         self.L.change_box('all', 
                     'x', 'final', min_coords[0], max_coords[0], 
-                    'y', 'final', min_coords[1], max_coords[1], 
+                    'y', 'final', min_coords[1], max_coords[1],
                     'z', 'final', min_coords[2], max_coords[2],
                     'boundary', 'f f f')
 
         
         ids = [] # array that will contain the id of the newly added atoms
         for i, position in enumerate(atom_pos):
-            print(f'adding atom: {i}')
             self.L.create_atoms(1, 'single', position[0], position[1], position[2]) # Create atom
             velocity_direction = directions[i] - position
             velocity_direction = velocity_direction / np.linalg.norm(velocity_direction)
@@ -164,21 +162,21 @@ class System:
 
         self.L.change_box('all', 'boundary', 's s s') # Change to shrink boundary for the simulation box again
 
+        treshold = 0.1
         # Position all the atoms exactly where they start to feel a force
-        while any((np.linalg.norm(self.get_atom_from_id(id).force) < 0.1) for id in ids): # While any of the atoms feels a force weaker than treshold
+        while any((np.linalg.norm(self.get_atom_from_id(id).force) < treshold) for id in ids): # While any of the atoms feels a force weaker than treshold
             self.L.run(1, 'pre no post no') # Evolve
             for id in ids: # Stop atom if it starts to feel force bigger than treshold
-                if (np.linalg.norm(self.get_atom_from_id(id).force) > 0.1):
-                    self.get_atom_from_id(id).velocity = [0, 0, 0]
+                atom = self.get_atom_from_id(id)
+                if (np.linalg.norm(atom.force) > treshold):
+                    atom.velocity = [0, 0, 0]
 
-        print('atoms ready to be deposited')
         two_radius = atomic_radius(3.6150) * 2 # !!!!!!!!!!!!!!!!!!!!!!!!!!!1hardcoded lattice constant!!!!!!!!!!!!!!!!!!!!!
         max_dist = two_radius + (two_radius * 5 / 100)
         distances = {id: self.distance_from_system(self.get_atom_from_id(id).position) for id in ids}
         while any(distances[id] > max_dist for id in ids): # While any of the added atoms distance from system is bigger than treshold
             self.L.run(50) # !!!!!!!!!!!!!!!!!!!!!!!!hardcoded steps!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! evolve
             distances = {id: self.distance_from_system(self.get_atom_from_id(id).position) for id in ids}
-            print(distances)
             for id in ids:
                 if distances[id] < max_dist: # Close enough to be considered deposited
                     ids = np.delete(ids, np.where(ids == id))
@@ -186,7 +184,6 @@ class System:
                     self.L.group('initial_atoms', 'id', id) # Add atom to de initial atoms so that it will evolve with langevin algorithm
 
     def get_center_of_mass(self):
-        self.L.run(0)
         positions = self.get_positions()
         masses = np.array([self.L.atoms[i].mass for i in range(self.L.atoms.natoms)])
         total_mass = np.sum(masses) # Calculate the total mass
@@ -238,6 +235,39 @@ class System:
 
     def run(self, steps):
         self.L.run(steps)
+
+    def get_thermo(self):
+        step = []
+        temp = []
+        pe = []
+        ke = []
+        etotal = []
+        press = []
+
+        for run in self.L.runs:
+            if run != self.L.runs[-1]:
+                run.thermo.Step.pop()
+                run.thermo.Temp.pop()
+                run.thermo.PotEng.pop()
+                run.thermo.KinEng.pop()
+                run.thermo.TotEng.pop()
+                run.thermo.Press.pop()
+
+            step += run.thermo.Step
+            temp += run.thermo.Temp
+            pe += run.thermo.PotEng
+            ke += run.thermo.KinEng
+            etotal += run.thermo.TotEng
+            press += run.thermo.Press
+
+        return {
+            'steps': step,
+            'temp': temp,
+            'potE': pe,
+            'kinE': ke,
+            'totE': etotal,
+            'press': press
+        }
 
 def thermal_velocity(mass, temperature):
     """
