@@ -81,124 +81,169 @@ class Algorithm(Enum):
 
 from lammps import PyLammps
 from ase.io import read, write
-from ase import Atoms
 import tempfile
 import numpy as np
-from scipy.spatial.distance import pdist
+from scipy.spatial.distance import pdist, cdist
+import random
 
 class System:
     def __init__(self, filename):
-        # Initialize LAMMPS interface
-        self.lmp = PyLammps()
-        
-        # Read atoms from xyz file
+        self.L = PyLammps()
+
+        # 1) Initialization
+        self.L.units('metal')
+        self.L.atom_style('atomic') # atoms like points with position
+        self.L.boundary('s s s') # the simulation box shrink in all three directions
+
+        # 2) System definition
         atoms = read(filename)
 
-        # Initialization
-        self.lmp.units("metal")
-        self.lmp.boundary("s s s")  # Shrink-wrap boundaries
-        self.lmp.atom_style("atomic")
-
-        # System definition
         positions = atoms.get_positions()  # Get atomic positions
-        min_pos = np.min(positions, axis=0)
-        max_pos = np.max(positions, axis=0)
-        buffer = 10.0
-        cell_x = max_pos[0] - min_pos[0] + buffer
-        cell_y = max_pos[1] - min_pos[1] + buffer
-        cell_z = max_pos[2] - min_pos[2] + buffer
-        atoms.set_cell([cell_x, cell_y, cell_z])
+        distances = pdist(positions)  # Calculate all pairwise distances
+        max_diameter = np.max(distances)  # Find the max radius
+
+        atoms.set_cell([max_diameter, max_diameter, max_diameter])
         atoms.center()
-        self.tmp = tempfile.NamedTemporaryFile(delete=False)
-        write(self.tmp.name, atoms, format='lammps-data')
-        self.lmp.read_data(self.tmp.name)
 
-        # Simulation settings
-        self.lmp.mass(1, 63.546)  # Set mass for Copper (atom type 1)
-        self.lmp.pair_style("eam")
-        self.lmp.pair_coeff('*', '*', 'Cu_u3.eam')
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            write(tmp.name, atoms, format='lammps-data') # write atoms in LAMMPS data format
 
-        # Initially, no MD algorithm is set for atoms
-        self.md_algorithm = [None] * len(atoms)
+        self.L.read_data(tmp.name) # load the LAMMPS data file into PyLammps
+        self.L.group('initial_atoms', 'id', '1', str(self.L.atoms.natoms))
+
+        # 3) Simulation settings
+        self.L.pair_style('eam')
+        self.L.pair_coeff('* * Cu_u3.eam')
+
+        self.L.neighbor(2.0, 'bin')  # Define neighbor skin distance. Useful for efficiency, need to check what does exactly
+        self.L.neigh_modify('every', 1, 'delay', 0, 'check', 'yes')  # Control neighbor list updating
+
+        self.L.velocity('initial_atoms', 'zero', 'linear') # Set initial velocity to zero if present
+        self.L.fix('momentum_fix', 'initial_atoms', 'momentum', '1', 'linear', '1 1 1', 'angular', 'rescale') # No rotation
+
+        # 4) Visualization
+        self.L.thermo(10)
+        self.L.thermo_style('custom', 'step', 'temp', 'pe', 'ke', 'etotal', 'press')
+        self.L.dump('dump1', 'all', 'atom', 10, 'dump.lammpstrj')
+
+        # 5) Run algorithms
+        self.L.fix('mynve', 'all', 'nve') # updates positions and velocities of the atoms at every step
+        self.L.fix('mylgv', 'initial_atoms', 'langevin', 300.0, 300.0, 0.1, random.randint(1, 999999)) # langevin thermostat
+        self.L.timestep(0.001) # 1 femtosecond. In metal units time is in picoseconds
+
+    def depo(self, angular_positions, directions):
+        if len(angular_positions) != len(directions):
+            sys.exit(f'Angular positions number of elements: {len(angular_positions)} must be equal of number of elements of directions: {len(directions)}')
+
+        radius = self.get_max_diameter() / 2 + self.get_cutoff_from_log() # Radius where the atoms that will be deposited will be placed initially
+        atom_pos = [(spherical_to_cartesian(radius, angular_position[0], angular_position[1])) for angular_position in angular_positions]
+        atom_pos = [pos + self.get_center_of_mass() for pos in atom_pos]
+        positions = self.get_positions()
+        positions = np.vstack((positions, atom_pos)) # Add the new atom positions to the already present atom's positions
+        print('position computed')
+
+        min_coords = positions.min(axis=0) # Min coordinate of the positions
+        max_coords = positions.max(axis=0) # Max coordinate of the positions
+
+        # Expand the simulation box so to include newly added atom and change the boundary to fixed (neccesary when creating new atoms)
+        self.L.change_box('all', 
+                    'x', 'final', min_coords[0], max_coords[0], 
+                    'y', 'final', min_coords[1], max_coords[1], 
+                    'z', 'final', min_coords[2], max_coords[2],
+                    'boundary', 'f f f')
+
+        
+        ids = [] # array that will contain the id of the newly added atoms
+        for i, position in enumerate(atom_pos):
+            print(f'adding atom: {i}')
+            self.L.create_atoms(1, 'single', position[0], position[1], position[2]) # Create atom
+            velocity_direction = directions[i] - position
+            velocity_direction = velocity_direction / np.linalg.norm(velocity_direction)
+            self.L.atoms[self.L.atoms.natoms - 1].velocity = velocity_direction * 50 # Assign initial velocity to the newly created atom with direction the center of mass
+            ids.append(self.L.atoms[self.L.atoms.natoms - 1].id)
+
+        self.L.change_box('all', 'boundary', 's s s') # Change to shrink boundary for the simulation box again
+
+        # Position all the atoms exactly where they start to feel a force
+        while any((np.linalg.norm(self.get_atom_from_id(id).force) < 0.1) for id in ids): # While any of the atoms feels a force weaker than treshold
+            self.L.run(1, 'pre no post no') # Evolve
+            for id in ids: # Stop atom if it starts to feel force bigger than treshold
+                if (np.linalg.norm(self.get_atom_from_id(id).force) > 0.1):
+                    self.get_atom_from_id(id).velocity = [0, 0, 0]
+
+        print('atoms ready to be deposited')
+        two_radius = atomic_radius(3.6150) * 2 # !!!!!!!!!!!!!!!!!!!!!!!!!!!1hardcoded lattice constant!!!!!!!!!!!!!!!!!!!!!
+        max_dist = two_radius + (two_radius * 5 / 100)
+        distances = {id: self.distance_from_system(self.get_atom_from_id(id).position) for id in ids}
+        while any(distances[id] > max_dist for id in ids): # While any of the added atoms distance from system is bigger than treshold
+            self.L.run(50) # !!!!!!!!!!!!!!!!!!!!!!!!hardcoded steps!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! evolve
+            distances = {id: self.distance_from_system(self.get_atom_from_id(id).position) for id in ids}
+            print(distances)
+            for id in ids:
+                if distances[id] < max_dist: # Close enough to be considered deposited
+                    ids = np.delete(ids, np.where(ids == id))
+                    del distances[id]
+                    self.L.group('initial_atoms', 'id', id) # Add atom to de initial atoms so that it will evolve with langevin algorithm
+
+    def get_center_of_mass(self):
+        self.L.run(0)
+        positions = self.get_positions()
+        masses = np.array([self.L.atoms[i].mass for i in range(self.L.atoms.natoms)])
+        total_mass = np.sum(masses) # Calculate the total mass
+        weighted_positions = np.sum(positions.T * masses, axis=1)  # Weighted sum of positions
+        center_of_mass = weighted_positions / total_mass # Compute the center of mass
+        return center_of_mass
+    
+    def get_atom_from_id(self, id):
+        atom = next((atom for atom in self.L.atoms if atom.id == id), None)
+        return atom
     
     def get_max_diameter(self):
-        """
-        Calculate the maximum distance between any two atoms in the system.
-
-        Returns:
-        --------
-        float
-            The maximum distance between two atoms in the system.
-        """
-        positions = self.atoms.get_positions()  # Get atomic positions
+        positions = self.get_positions()
         distances = pdist(positions)  # Calculate all pairwise distances
-        max_rad = np.max(distances)  # Find the maximum distance
-        return max_rad
+        max_diameter = np.max(distances)  # Find the max diameter
+        return max_diameter
     
-    def add_atom(self, position):
-        """
-        Adds a new atom to the system at the given position, ensuring the box is large enough.
-        
-        Parameters
-        ----------
-        position : list or array-like
-            The position (x, y, z) where the new atom will be placed (in box units).
-        """
-        # Expand the box if the atom's position is outside the current bounds
-        
-        # Add a new atom using PyLammps create_atoms method
-        self.lmp.create_atoms(1, 'single', position[0], position[1], position[2], 'units', 'box')
-        
-        # Check if an atom was successfully created
-        new_atom_count = self.lmp.get_natoms()
-        if new_atom_count <= len(self.atoms):
-            print("Error: No atom created. Make sure the position is inside the box.")
-        else:
-            # Update the ASE atoms object to keep track of the new atom
-            self.atoms += Atoms('Cu', positions=[position])  # Example with Copper atom
-        
-        # Append None to the md_algorithm list for the new atom
-        self.md_algorithm.append(None)
+    def get_max_distance_between_atoms(self):
+        positions = self.get_positions()
+        pairwise_distances = cdist(positions, positions) # Compute pairwise distances
+        np.fill_diagonal(pairwise_distances, np.inf) # Set diagonal (self-distances) to infinity so they don't interfere with finding the minimum
+        min_distances = np.min(pairwise_distances, axis=1) # Find the minimum distance for each atom, excluding the self-distance
+        return max(min_distances)
     
-    def __getitem__(self, key):
-        """Enable slicing, so we can select specific atoms."""
-        return self.atoms[key]
-
-    def set_algorithm(self, indices, algorithm):
-        """Assign MD algorithm to specific atoms."""
-        for i in indices:
-            self.md_algorithm[i] = algorithm
+    def distance_from_system(self, position):
+        distances = np.linalg.norm(self.get_positions() - position, axis=1) # Compute distances between position and all positions
+        distances = distances[distances > 0] # Exclude the distance from itself if position atom of the system
+        shortest_distance = np.min(distances)
+        return shortest_distance
     
-    def evolve(self, parameters):
-        """Run the MD simulation using LAMMPS based on the specified parameters."""
+    def get_positions(self):
+        positions = np.array([self.L.atoms[i].position for i in range(self.L.atoms.natoms)])  # Get atomic positions
+        return positions
+    
+    def get_cutoff_from_log(self):
+        self.L.run(0)
+        cutoff = None
+        with open('log.lammps', 'r') as log_file:
+            for line in log_file:
+                if "master list distance cutoff" in line.lower():
+                    # Extract the cutoff value from the line
+                    words = line.split()
+                    cutoff = float(words[-1])  # The last word should be the cutoff value
+                    break
+        if not cutoff:
+            sys.exit('no cutoff found')
         
-        # Set MD algorithms for different atom groups
-        if Algorithm.langevin in self.md_algorithm:
-            group_langevin = "group langevin id " + " ".join(str(i+1) for i, algo in enumerate(self.md_algorithm) if algo == Algorithm.langevin)
-            self.lmp.command(group_langevin)
-            self.lmp.fix('lngnve', 'langevin', 'nve')
-            self.lmp.fix('lnglng', "langevin", "langevin", 300.0, 300.0, 0.1, 12345)
+        return cutoff
 
-        if Algorithm.verlet in self.md_algorithm:
-            group_verlet = "group verlet id " + " ".join(str(i+1) for i, algo in enumerate(self.md_algorithm) if algo == Algorithm.verlet)
-            self.lmp.command(group_verlet)
-            self.lmp.fix('vrl', "verlet", "nve")
-        
-        # Save trajectory
-        self.lmp.dump('mydmp', 'all', 'atom', 100, 'dump.lammpstrj')
-
-        # Set the time step and run the simulation
-        self.lmp.timestep(parameters.timestep)
-        self.lmp.run(parameters.steps)
+    def run(self, steps):
+        self.L.run(steps)
 
 def thermal_velocity(mass, temperature):
     """
     Returns velocity of the thermal motion of particles
     at a given temperature
     """
-    
-    # Calculate the velocity corresponding to the temperature
-    # v = sqrt((3 * kB * T) / m)
     return np.sqrt((3 * units.kB * temperature) / mass)
 
 def eigen_vector(position, target):
@@ -261,3 +306,17 @@ def spherical_to_cartesian(r, theta, phi):
     z = r * np.cos(theta)
     
     return np.array([x, y, z])
+
+import math
+def atomic_radius(lattice_constant, structure='fcc'):
+    if structure == 'fcc':
+        # Face-Centered Cubic (FCC)
+        return (math.sqrt(2) / 4) * lattice_constant
+    elif structure == 'bcc':
+        # Body-Centered Cubic (BCC)
+        return (math.sqrt(3) / 4) * lattice_constant
+    elif structure == 'hcp':
+        # Hexagonal Close-Packed (HCP)
+        return 0.5 * lattice_constant
+    else:
+        raise ValueError("Unknown crystal structure")

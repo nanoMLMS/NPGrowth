@@ -24,12 +24,14 @@
 # from lamm
 
 import utils
+import dynamics
+import numpy as np
 
 system = utils.System('Cu675.xyz')
-parameters = utils.SimulationParameters('parameters.toml')
+seed_center_of_mass = system.get_center_of_mass()
 
-# Assign algorithms to different parts of the system
-system.set_algorithm(range(675), utils.Algorithm.langevin)
-
-# Evolve the system
-system.evolve(parameters)
+for i in range(50):
+    angular_positions = [[np.pi / 2, np.pi/2 * i] for i in range(4)] # [theta, phi]
+    directions = [seed_center_of_mass for i in range(len(angular_positions))]
+    system.depo(angular_positions, directions)
+    system.run(1000)
