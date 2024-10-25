@@ -109,26 +109,45 @@ class System:
             write(tmp.name, atoms, format='lammps-data') # write atoms in LAMMPS data format
 
         self.L.read_data(tmp.name) # load the LAMMPS data file into PyLammps
-        self.L.group('initial_atoms', 'id', '1', str(self.L.atoms.natoms))
+        self.L.group('initial_atoms', 'id', f'1:{str(self.L.atoms.natoms)}')
 
         # 3) Simulation settings
         self.L.pair_style('eam')
-        self.L.pair_coeff('* * Cu_u3.eam')
+        self.L.pair_coeff('* * ./potentials/Cu_u3.eam')
+        self.L.mass(1, 63.55)
 
         self.L.neighbor(2.0, 'bin')  # Define neighbor skin distance. Useful for efficiency, need to check what does exactly
         self.L.neigh_modify('every', 1, 'delay', 0, 'check', 'yes')  # Control neighbor list updating
 
         self.L.velocity('initial_atoms', 'zero', 'linear') # Set initial velocity to zero if present
-        self.L.fix('momentum_fix', 'initial_atoms', 'momentum', '1', 'linear', '1 1 1', 'angular', 'rescale') # No rotation
+        self.L.fix('momentum_fix', 'initial_atoms', 'momentum', '1', 'linear', '1 1 1', 'angular', 'rescale') # No rotation. Without rescale the system shouldn't rotate but it does. Need to recheck
 
         # 4) Visualization
         self.L.thermo(10)
         self.L.thermo_style('custom', 'step', 'temp', 'pe', 'ke', 'etotal', 'press')
         self.L.dump('dump1', 'all', 'atom', 10, 'dump.lammpstrj')
+        
+        # Define thermo variables
+        self.L.variable("step_var", "equal", "step")
+        self.L.variable("temp_var", "equal", "temp")
+        self.L.variable("pe_var", "equal", "pe")
+        self.L.variable("ke_var", "equal", "ke")
+        self.L.variable("etotal_var", "equal", "etotal")
+        self.L.variable("press_var", "equal", "press")
+
+        # Set up fix print to log only thermo data to a file without command logs
+        self.L.fix("thermo_output", "all", "print", "100",  # Print every 100 steps
+                '"${step_var} ${temp_var} ${pe_var} ${ke_var} ${etotal_var} ${press_var}"',
+                "file", "thermo_data.txt", "screen", "no", "title",
+                '"Step Temp PE KE Etotal Press"')
 
         # 5) Run algorithms
+        self.L.minimize(1.0e-4, 1.0e-6, 1000, 10000)
+
         self.L.fix('mynve', 'all', 'nve') # updates positions and velocities of the atoms at every step
-        self.L.fix('mylgv', 'initial_atoms', 'langevin', 300.0, 300.0, 0.1, random.randint(1, 999999)) # langevin thermostat
+        
+        self.L.fix('mylgv', 'initial_atoms', 'langevin', 300.0, 300.0, 1, random.randint(1, 999999)) # langevin thermostat
+
         self.L.timestep(0.001) # 1 femtosecond. In metal units time is in picoseconds
 
     def depo(self, angular_positions, directions):
@@ -170,6 +189,7 @@ class System:
                 atom = self.get_atom_from_id(id)
                 if (np.linalg.norm(atom.force) > treshold):
                     atom.velocity = [0, 0, 0]
+
 
         two_radius = atomic_radius(3.6150) * 2 # !!!!!!!!!!!!!!!!!!!!!!!!!!!1hardcoded lattice constant!!!!!!!!!!!!!!!!!!!!!
         max_dist = two_radius + (two_radius * 5 / 100)
