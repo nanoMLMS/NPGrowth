@@ -21,6 +21,15 @@ echo "Installing LAMMPS Python bindings..."
 make install-python
 
 # Return to the root of the project
-cd ../../
+cd ../../../
 
 echo "LAMMPS is ready and Python bindings are installed!"
+
+echo "Creating virtualenv"
+python3 -m venv .venv 
+source .venv/bin/activate
+
+echo "Installing requirements"
+pip install -r requirements.txt
+
+echo "All finished!"

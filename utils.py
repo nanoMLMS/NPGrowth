@@ -125,7 +125,7 @@ class System:
         # 4) Visualization
         self.L.thermo(10)
         self.L.thermo_style('custom', 'step', 'temp', 'pe', 'ke', 'etotal', 'press')
-        self.L.dump('dump1', 'all', 'atom', 10, 'dump.lammpstrj')
+        self.L.dump('dump1', 'all', 'atom', 20, 'dump.lammpstrj')
         
         # Define thermo variables
         self.L.variable("step_var", "equal", "step")
@@ -138,7 +138,7 @@ class System:
         # Set up fix print to log only thermo data to a file without command logs
         self.L.fix("thermo_output", "all", "print", "100",  # Print every 100 steps
                 '"${step_var} ${temp_var} ${pe_var} ${ke_var} ${etotal_var} ${press_var}"',
-                "file", "thermo_data.txt", "screen", "no", "title",
+                "file", "thermo_data.data", "screen", "no", "title",
                 '"Step Temp PE KE Etotal Press"')
 
         # 5) Run algorithms
