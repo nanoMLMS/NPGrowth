@@ -3,7 +3,7 @@ import numpy as np
 
 system = utils.System('./seeds/Cu675.xyz')
 
-system.run(5000)
+system.run(1000)
 
 seed_center_of_mass = system.get_center_of_mass()
 

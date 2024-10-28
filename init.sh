@@ -2,6 +2,14 @@
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+echo "Creating virtualenv"
+cd "$DIR"
+python3 -m venv .venv 
+source .venv/bin/activate
+
+echo "Installing requirements"
+pip install -r requirements.txt
+
 # Update and initialize the LAMMPS submodule
 echo "Initializing LAMMPS submodule..."
 git submodule update --init --recursive
@@ -25,12 +33,5 @@ make install-python
 
 # Return to the root of the project
 echo "LAMMPS is ready and Python bindings are installed!"
-echo "Creating virtualenv"
-cd "$DIR"
-python3 -m venv .venv 
-source .venv/bin/activate
-
-echo "Installing requirements"
-pip install -r requirements.txt
 
 echo "All finished!"
