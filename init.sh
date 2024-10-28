@@ -1,10 +1,13 @@
 #!/bin/bash
 
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Update and initialize the LAMMPS submodule
 echo "Initializing LAMMPS submodule..."
 git submodule update --init --recursive
 
 # Navigate to the LAMMPS source directory
+cd "$DIR"
 cd external/lammps/src
 
 # Load LAMMPS build dependencies (optional)
@@ -21,11 +24,9 @@ echo "Installing LAMMPS Python bindings..."
 make install-python
 
 # Return to the root of the project
-cd ../../../
-
 echo "LAMMPS is ready and Python bindings are installed!"
-
 echo "Creating virtualenv"
+cd "$DIR"
 python3 -m venv .venv 
 source .venv/bin/activate
 
