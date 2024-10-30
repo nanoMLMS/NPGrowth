@@ -1,90 +1,16 @@
-import sys
-import toml
-from ase import units
-
-class SimulationParameters:
-    """
-    This class is responsible for loading and storing simulation parameters from a TOML file.
-
-    Parameters:
-    -----------
-    filename : str
-        The path to the TOML file containing the simulation parameters.
-
-    Attributes:
-    -----------
-    n_atoms : int
-        The number of atoms to be used in the simulation.
-    radius_offset : float
-        The radial offset used in the simulation.
-    temperature : float
-        The temperature for the molecular dynamics simulation.
-    timestep : float
-        The time step for the molecular dynamics simulation.
-    steps : int
-        The number of steps for the molecular dynamics simulation.
-    write_interval : int
-        The interval at which the simulation data will be written to a file.
-    """
-
-    def __init__(self, filename):
-        self.__filename = filename
-
-        parameters = self.__get()
-
-        growth_params = parameters['growth']
-        self.n_atoms = growth_params['n_atoms']
-        self.radius_offset = growth_params['radius_offset']
-
-        dynamics_params = parameters['dynamics']
-        self.temperature = dynamics_params['temperature']
-        # Why units.fs is not 10**-15
-        self.timestep = dynamics_params['timestep'] * units.fs
-        self.steps = dynamics_params['steps']
-        self.write_interval = dynamics_params['write_interval']
-
-    def __get(self):
-        try:
-            file = open(self.__filename, "r")
-        except OSError:
-            print("Can't read parameters from", self.__filename)
-            sys.exit()
-
-        with file:
-            parameters = toml.load(file)
-        
-        return parameters
-    
-    def __check():
-        # TODO check parameters
-        print()
-    
-    def __str__(self):
-        """
-        Returns a readable string representation of the object for printing.
-        """
-        return (f"Simulation Parameters:\n"
-                f"  Number of Atoms to add: {self.n_atoms}\n"
-                f"  Radius Offset: {self.radius_offset} Å\n"
-                f"  Temperature: {self.temperature} K\n"
-                f"  Timestep: {self.timestep} fs\n"
-                f"  Steps: {self.steps}\n"
-                f"  Write Interval: {self.write_interval} steps\n"
-                f"  Parameter File: {self.__filename}")
-
-from enum import Enum
-
-class Algorithm(Enum):
-    langevin = "langevin"
-    verlet = "verlet"
-
-
 from lammps import PyLammps
 from ase.io import read, write
 import tempfile
 import numpy as np
 from scipy.spatial.distance import pdist, cdist
 import random
+import utils.functions
+import sys
+
+force_treshold = 0.1
+temperature = 100.0
+initial_temperature = final_temperature = temperature
+lattice_constant = 3.6150
 
 class System:
     def __init__(self, filename):
@@ -146,19 +72,16 @@ class System:
 
         self.L.fix('mynve', 'all', 'nve') # updates positions and velocities of the atoms at every step
         
-        self.L.fix('mylgv', 'initial_atoms', 'langevin', 300.0, 300.0, 1, random.randint(1, 999999)) # langevin thermostat
+        self.L.fix('mylgv', 'initial_atoms', 'langevin', initial_temperature, final_temperature, 1, random.randint(1, 999999)) # langevin thermostat
 
         self.L.timestep(0.001) # 1 femtosecond. In metal units time is in picoseconds
 
-    def depo(self, angular_positions, directions):
-        if len(angular_positions) != len(directions):
-            sys.exit(f'Angular positions number of elements: {len(angular_positions)} must be equal of number of elements of directions: {len(directions)}')
+    def depo(self, atom_positions, targets):
+        if len(atom_positions) != len(targets):
+            sys.exit(f'Positions number: {len(atom_positions)} must be equal to number of targets: {len(targets)}')
 
-        radius = self.get_max_diameter() / 2 + self.get_cutoff_from_log() # Radius where the atoms that will be deposited will be placed initially
-        atom_pos = [(spherical_to_cartesian(radius, angular_position[0], angular_position[1])) for angular_position in angular_positions]
-        atom_pos = [pos + self.get_center_of_mass() for pos in atom_pos]
         positions = self.get_positions()
-        positions = np.vstack((positions, atom_pos)) # Add the new atom positions to the already present atom's positions
+        positions = np.vstack((positions, atom_positions)) # Add the new atom positions to the already present atom's positions
 
         min_coords = positions.min(axis=0) # Min coordinate of the positions
         max_coords = positions.max(axis=0) # Max coordinate of the positions
@@ -172,26 +95,25 @@ class System:
 
         
         ids = [] # array that will contain the id of the newly added atoms
-        for i, position in enumerate(atom_pos):
+        for i, position in enumerate(atom_positions):
             self.L.create_atoms(1, 'single', position[0], position[1], position[2]) # Create atom
-            velocity_direction = directions[i] - position
+            velocity_direction = targets[i] - position
             velocity_direction = velocity_direction / np.linalg.norm(velocity_direction)
             self.L.atoms[self.L.atoms.natoms - 1].velocity = velocity_direction * 50 # Assign initial velocity to the newly created atom with direction the center of mass
             ids.append(self.L.atoms[self.L.atoms.natoms - 1].id)
 
         self.L.change_box('all', 'boundary', 's s s') # Change to shrink boundary for the simulation box again
 
-        treshold = 0.1
         # Position all the atoms exactly where they start to feel a force
-        while any((np.linalg.norm(self.get_atom_from_id(id).force) < treshold) for id in ids): # While any of the atoms feels a force weaker than treshold
+        while any((np.linalg.norm(self.get_atom_from_id(id).force) < force_treshold) for id in ids): # While any of the atoms feels a force weaker than treshold
             self.L.run(1, 'pre no post no') # Evolve
             for id in ids: # Stop atom if it starts to feel force bigger than treshold
                 atom = self.get_atom_from_id(id)
-                if (np.linalg.norm(atom.force) > treshold):
+                if (np.linalg.norm(atom.force) > force_treshold):
                     atom.velocity = [0, 0, 0]
 
 
-        two_radius = atomic_radius(3.6150) * 2 # !!!!!!!!!!!!!!!!!!!!!!!!!!!1hardcoded lattice constant!!!!!!!!!!!!!!!!!!!!!
+        two_radius = utils.functions.atomic_radius(lattice_constant) * 2 # !!!!!!!!!!!!!!!!!!!!!!!!!!!1hardcoded lattice constant!!!!!!!!!!!!!!!!!!!!!
         max_dist = two_radius + (two_radius * 5 / 100)
         distances = {id: self.distance_from_system(self.get_atom_from_id(id).position) for id in ids}
         while any(distances[id] > max_dist for id in ids): # While any of the added atoms distance from system is bigger than treshold
@@ -212,8 +134,9 @@ class System:
         return center_of_mass
     
     def get_atom_from_id(self, id):
-        atom = next((atom for atom in self.L.atoms if atom.id == id), None)
-        return atom
+        atom_ids = self.L.lmp.numpy.extract_atom('id', 0)
+        index = np.where(atom_ids == id)[0][0]
+        return self.L.atoms[index]
     
     def get_max_diameter(self):
         positions = self.get_positions()
@@ -235,7 +158,7 @@ class System:
         return shortest_distance
     
     def get_positions(self):
-        positions = np.array([self.L.atoms[i].position for i in range(self.L.atoms.natoms)])  # Get atomic positions
+        positions = self.L.lmp.numpy.extract_atom("x", 3)  # "x" for position, 3 for the dimensionality (x, y, z)
         return positions
     
     def get_cutoff_from_log(self):
@@ -288,85 +211,11 @@ class System:
             'totE': etotal,
             'press': press
         }
+    
 
-def thermal_velocity(mass, temperature):
-    """
-    Returns velocity of the thermal motion of particles
-    at a given temperature
-    """
-    return np.sqrt((3 * units.kB * temperature) / mass)
+# import timeit
 
-def eigen_vector(position, target):
-    """
-    Returns eigen vector that points from position to target
-    """
-    
-    direction = target - position
-    direction = direction / np.linalg.norm(direction)
-    return direction
-
-def get_position(radius):
-    """
-    Generate a random position on a sphere of a given radius around a given center. 
-    
-    Parameters:
-    -----------
-    radius : float
-        The radius of the sphere on which the random position is generated.
-
-    Returns:
-    --------
-    numpy.ndarray
-        A 3D vector (x, y, z) representing the random position in Cartesian coordinates.
-    """
-    
-    # Fixed colatitude angle (theta) = pi/2 (the equator plane in spherical coordinates)
-    theta = np.random.uniform(0, np.pi)
-    
-    # Random longitude angle (phi) uniformly distributed between 0 and 2*pi
-    phi = np.random.uniform(0, 2 * np.pi)
-    
-    # Convert spherical coordinates (theta, phi) to Cartesian coordinates (x, y, z)
-    x = radius * np.sin(theta) * np.cos(phi)
-    y = radius * np.sin(theta) * np.sin(phi)
-    z = radius * np.cos(theta)  # z = 0 because theta = pi/2
-
-    return np.array([x, y, z])
-
-def spherical_to_cartesian(r, theta, phi):
-    """
-    Convert spherical coordinates (r, theta, phi) to Cartesian coordinates (x, y, z).
-    
-    Parameters:
-    -----------
-    r : float
-        The radial distance from the origin (radius).
-    theta : float
-        The polar angle (in radians), measured from the positive z-axis.
-    phi : float
-        The azimuthal angle (in radians), measured from the positive x-axis in the xy-plane.
-    
-    Returns:
-    --------
-    numpy.ndarray
-        A 3D vector (x, y, z) representing the random position in Cartesian coordinates.
-    """
-    x = r * np.sin(theta) * np.cos(phi)
-    y = r * np.sin(theta) * np.sin(phi)
-    z = r * np.cos(theta)
-    
-    return np.array([x, y, z])
-
-import math
-def atomic_radius(lattice_constant, structure='fcc'):
-    if structure == 'fcc':
-        # Face-Centered Cubic (FCC)
-        return (math.sqrt(2) / 4) * lattice_constant
-    elif structure == 'bcc':
-        # Body-Centered Cubic (BCC)
-        return (math.sqrt(3) / 4) * lattice_constant
-    elif structure == 'hcp':
-        # Hexagonal Close-Packed (HCP)
-        return 0.5 * lattice_constant
-    else:
-        raise ValueError("Unknown crystal structure")
+# system = System('./seeds/Cu4631.xyz')
+# n_times = 100
+# execution_time = timeit.timeit(lambda: system.distance_from_system([100, 10, 10]), number=n_times)
+# print(f'time to execute function: {execution_time/n_times}')
