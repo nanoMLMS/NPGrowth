@@ -8,7 +8,7 @@ import utils.functions
 import sys
 
 force_treshold = 0.1
-temperature = 100.0
+temperature = 300.0
 initial_temperature = final_temperature = temperature
 lattice_constant = 3.6150
 
