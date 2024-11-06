@@ -25,7 +25,7 @@ cd external/lammps/src
 echo "Building LAMMPS..."
 make yes-PYTHON
 make yes-MANYBODY
-make mode=shared serial
+make mode=shared mpi
 
 # Install Python bindings for LAMMPS
 echo "Installing LAMMPS Python bindings..."

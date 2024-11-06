@@ -1,19 +1,18 @@
-from lammps import PyLammps
+import uuid
+from lammps import lammps, PyLammps
 from ase.io import read, write
 import tempfile
 import numpy as np
 from scipy.spatial.distance import pdist, cdist
 import random
-import utils.functions
+from NPGrowth.SimulationParameters import SimulationParameters
+import NPGrowth.functions
 import sys
 
-force_treshold = 0.1
-temperature = 300.0
-initial_temperature = final_temperature = temperature
-lattice_constant = 3.6150
-
 class System:
-    def __init__(self, filename):
+    def __init__(self, parameters_filename):
+        self.parameters = SimulationParameters(parameters_filename)
+        
         self.L = PyLammps()
 
         # 1) Initialization
@@ -22,7 +21,7 @@ class System:
         self.L.boundary('s s s') # the simulation box shrink in all three directions
 
         # 2) System definition
-        atoms = read(filename)
+        atoms = read(self.parameters.seed_filename)
 
         positions = atoms.get_positions()  # Get atomic positions
         distances = pdist(positions)  # Calculate all pairwise distances
@@ -49,9 +48,9 @@ class System:
         self.L.fix('momentum_fix', 'initial_atoms', 'momentum', '1', 'linear', '1 1 1', 'angular', 'rescale') # No rotation. Without rescale the system shouldn't rotate but it does. Need to recheck
 
         # 4) Visualization
-        self.L.thermo(10)
+        self.L.thermo(self.parameters.write_interval)
         self.L.thermo_style('custom', 'step', 'temp', 'pe', 'ke', 'etotal', 'press')
-        self.L.dump('dump1', 'all', 'atom', 20, 'dump.lammpstrj')
+        self.L.dump('dump1', 'all', 'atom', self.parameters.write_interval, self.parameters.trajectory_filename)
         
         # Define thermo variables
         self.L.variable("step_var", "equal", "step")
@@ -62,19 +61,20 @@ class System:
         self.L.variable("press_var", "equal", "press")
 
         # Set up fix print to log only thermo data to a file without command logs
-        self.L.fix("thermo_output", "all", "print", "100",  # Print every 100 steps
+        self.L.fix("thermo_output", "all", "print", f'{self.parameters.write_interval}',
                 '"${step_var} ${temp_var} ${pe_var} ${ke_var} ${etotal_var} ${press_var}"',
-                "file", "thermo_data.data", "screen", "no", "title",
+                "file", self.parameters.thermo_data_filename, "screen", "no", "title",
                 '"Step Temp PE KE Etotal Press"')
 
         # 5) Run algorithms
-        self.L.minimize(1.0e-4, 1.0e-6, 1000, 10000)
+        if self.parameters.minimize_before_simulation == 'True':
+            self.L.minimize(1.0e-4, 1.0e-6, 1000, 10000)
 
         self.L.fix('mynve', 'all', 'nve') # updates positions and velocities of the atoms at every step
         
-        self.L.fix('mylgv', 'initial_atoms', 'langevin', initial_temperature, final_temperature, 1, random.randint(1, 999999)) # langevin thermostat
+        self.L.fix('mylgv', 'initial_atoms', 'langevin', self.parameters.temperature, self.parameters.temperature, 1, random.randint(1, 999999)) # langevin thermostat
 
-        self.L.timestep(0.001) # 1 femtosecond. In metal units time is in picoseconds
+        self.L.timestep(self.parameters.timestep)
 
     def depo(self, atom_positions, targets):
         if len(atom_positions) != len(targets):
@@ -105,15 +105,15 @@ class System:
         self.L.change_box('all', 'boundary', 's s s') # Change to shrink boundary for the simulation box again
 
         # Position all the atoms exactly where they start to feel a force
-        while any((np.linalg.norm(self.get_atom_from_id(id).force) < force_treshold) for id in ids): # While any of the atoms feels a force weaker than treshold
+        while any((np.linalg.norm(self.get_atom_from_id(id).force) < self.parameters.force_treshold) for id in ids): # While any of the atoms feels a force weaker than treshold
             self.L.run(1, 'pre no post no') # Evolve
             for id in ids: # Stop atom if it starts to feel force bigger than treshold
                 atom = self.get_atom_from_id(id)
-                if (np.linalg.norm(atom.force) > force_treshold):
+                if (np.linalg.norm(atom.force) > self.parameters.force_treshold):
                     atom.velocity = [0, 0, 0]
 
 
-        two_radius = utils.functions.atomic_radius(lattice_constant) * 2 # !!!!!!!!!!!!!!!!!!!!!!!!!!!1hardcoded lattice constant!!!!!!!!!!!!!!!!!!!!!
+        two_radius = NPGrowth.functions.atomic_radius(self.parameters.lattice_constant) * 2 # !!!!!!!!!!!!!!!!!!!!!!!!!!!1hardcoded lattice constant!!!!!!!!!!!!!!!!!!!!!
         max_dist = two_radius + (two_radius * 5 / 100)
         distances = {id: self.distance_from_system(self.get_atom_from_id(id).position) for id in ids}
         while any(distances[id] > max_dist for id in ids): # While any of the added atoms distance from system is bigger than treshold
@@ -124,6 +124,13 @@ class System:
                     ids = np.delete(ids, np.where(ids == id))
                     del distances[id]
                     self.L.group('initial_atoms', 'id', id) # Add atom to de initial atoms so that it will evolve with langevin algorithm
+
+    def remove(self, targets, tolerance=0.1):
+        for i, pos in enumerate(targets):
+            region_name = f"target_region_{uuid.uuid4().hex[:8]}" # Define a region for each target position
+            self.L.region(region_name, "sphere", *pos, tolerance) # Add atoms in this region to a group for deletion
+            self.L.group("to_delete", "region", region_name)
+        self.L.delete_atoms("group", "to_delete") # Delete the atoms in the current region
 
     def get_center_of_mass(self):
         positions = self.get_positions()
@@ -211,11 +218,36 @@ class System:
             'totE': etotal,
             'press': press
         }
-    
+
+# def set_velocity(system):
+#     system.L.atoms[system.L.atoms.natoms - 1].velocity = 0
+
+# def system_ran(system):
+#     system.L.run(1, 'pre no post no') # Evolve
+
+# def check_force(system):
+#     for _ in range(6):
+#         atom = system.get_atom_from_id(3000)
+#         if (np.linalg.norm(atom.force) > self.parameters.force_treshold):
+#             atom.velocity = [0, 0, 0]
+
+# def distances(system):
+#     ids = [1000, 100, 4000, 4000, 200, 1000]
+#     distances = {id: system.distance_from_system(system.get_atom_from_id(id).position) for id in ids}
 
 # import timeit
 
 # system = System('./seeds/Cu4631.xyz')
-# n_times = 100
-# execution_time = timeit.timeit(lambda: system.distance_from_system([100, 10, 10]), number=n_times)
-# print(f'time to execute function: {execution_time/n_times}')
+# n_times = 1000
+# execution_time_velocity = timeit.timeit(lambda: set_velocity(system), number=n_times)
+# print(f'time to execute function set velocity: {execution_time_velocity/n_times}')
+# system.run(1)
+# execution_time_ran = timeit.timeit(lambda: system_ran(system), number=n_times)
+# print(f'time to execute function ran: {execution_time_ran/n_times}')
+# execution_time_check_force = timeit.timeit(lambda: check_force(system), number=n_times)
+# print(f'time to execute function check force: {execution_time_check_force/n_times}')
+# execution_time_distances = timeit.timeit(lambda: distances(system), number=n_times)
+# print(f'time to execute function distances: {execution_time_distances/n_times}')
+
+# fraction = (execution_time_ran/execution_time_check_force) # if > 1 system.ran takes longer than check force
+# print(f'ran time / check force time: {fraction}')
