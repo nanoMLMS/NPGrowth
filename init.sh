@@ -34,4 +34,8 @@ make install-python
 # Return to the root of the project
 echo "LAMMPS is ready and Python bindings are installed!"
 
+echo "Installing NPGrowth locally"
+cd "$DIR"
+pip install -e .
+
 echo "All finished!"
