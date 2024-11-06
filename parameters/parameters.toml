@@ -1,4 +1,4 @@
-seed_filename = './seeds/Cu4631.xyz'
+seed_filename = './seeds/Cu1687.xyz'
 trajectory_filename = './output/dump.lammpstrj'
 thermo_data_filename = './output/thermo.data'
 temperature = 100 # Kelvin
