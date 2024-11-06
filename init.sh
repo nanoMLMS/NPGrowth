@@ -25,7 +25,7 @@ cd external/lammps/src
 echo "Building LAMMPS..."
 make yes-PYTHON
 make yes-MANYBODY
-make mode=shared mpi
+make mode=shared serial
 
 # Install Python bindings for LAMMPS
 echo "Installing LAMMPS Python bindings..."
@@ -37,5 +37,7 @@ echo "LAMMPS is ready and Python bindings are installed!"
 echo "Installing NPGrowth locally"
 cd "$DIR"
 pip install -e .
+
+mkdir output
 
 echo "All finished!"
