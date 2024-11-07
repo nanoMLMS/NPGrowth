@@ -23,11 +23,12 @@ angular_positions = [NPGrowth.functions.cartesian_to_spherical(position[0], posi
 
 cutoff = system.get_cutoff_from_log()
 # Remove positions on the 4 surface of the cube
-for angular_position in angular_positions:
-    radius = system.get_max_diameter() / 2 + cutoff
-    targets = [NPGrowth.functions.spherical_to_cartesian(angular_position[0], angular_position[1], angular_position[2] + np.pi/2 * i) for i in range(4)]
-    targets = [p + seed_center_of_mass for p in targets]
-    positions = [NPGrowth.functions.spherical_to_cartesian(radius, angular_position[1], angular_position[2] + np.pi/2 * i) for i in range(4)]
-    positions = [p + seed_center_of_mass for p in positions]
-    system.depo(positions, targets)
-    system.run(100)
+for j in range(100):
+    for angular_position in angular_positions:
+        radius = system.get_max_diameter() / 2 + cutoff
+        targets = [NPGrowth.functions.spherical_to_cartesian(angular_position[0], angular_position[1], angular_position[2] + np.pi/2 * i) for i in range(4)]
+        targets = [p + seed_center_of_mass for p in targets]
+        positions = [NPGrowth.functions.spherical_to_cartesian(radius, angular_position[1], angular_position[2] + np.pi/2 * i) for i in range(4)]
+        positions = [p + seed_center_of_mass for p in positions]
+        system.depo(positions, targets)
+        system.run(100)

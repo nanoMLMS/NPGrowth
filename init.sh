@@ -7,6 +7,8 @@ cd "$DIR"
 python3 -m venv .venv 
 source .venv/bin/activate
 
+export BEZIER_NO_EXTENSION=true
+
 echo "Installing requirements"
 pip install -r requirements.txt
 
