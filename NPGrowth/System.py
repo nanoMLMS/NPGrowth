@@ -151,6 +151,11 @@ class System:
         max_diameter = np.max(distances)  # Find the max diameter
         return max_diameter
     
+    def get_further_atom(self, position):
+        distances = np.linalg.norm(self.get_positions() - position, axis=1) # Compute distances between position and all positions
+        max_distance = np.max(distances)
+        return max_distance
+
     def get_max_distance_between_atoms(self):
         positions = self.get_positions()
         pairwise_distances = cdist(positions, positions) # Compute pairwise distances

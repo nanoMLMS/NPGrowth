@@ -1,0 +1,9 @@
+seed_filename = './seeds/Cu4631.xyz'
+trajectory_filename = './output/spike.lammpstrj'
+thermo_data_filename = './output/spike_thermo.data'
+temperature = 100 # Kelvin
+timestep = 0.002 # Picoseconds
+write_interval = 1000
+minimize_before_simulation = 'True'
+lattice_constant = 3.6150
+force_treshold = 0.1

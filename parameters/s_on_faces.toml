@@ -1,0 +1,9 @@
+seed_filename = './seeds/Cu4631.xyz'
+trajectory_filename = './output/s_on_faces.lammpstrj'
+thermo_data_filename = './output/s_on_faces_thermo.data'
+temperature = 100 # Kelvin
+timestep = 0.002 # Picoseconds
+write_interval = 50
+minimize_before_simulation = 'True'
+lattice_constant = 3.6150
+force_treshold = 0.1
