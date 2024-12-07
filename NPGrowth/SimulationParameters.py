@@ -17,6 +17,9 @@ class SimulationParameters:
         self.timestep = parameters['timestep'] # picoseconds
         self.seed_filename = parameters['seed_filename']
         self.thermo_data_filename = parameters['thermo_data_filename']
+        self.termalize_steps = parameters['termalize_steps']
+        self.n_depo_repeat = parameters['n_depo_repeat']
+        self.steps_to_next_depo = parameters['steps_to_next_depo']
 
     def __get(self):
         try:

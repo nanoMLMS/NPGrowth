@@ -50,8 +50,9 @@ class System:
         # 4) Visualization
         self.L.thermo(self.parameters.write_interval)
         self.L.thermo_style('custom', 'step', 'temp', 'pe', 'ke', 'etotal', 'press')
-        self.L.dump('dump1', 'all', 'atom', self.parameters.write_interval, self.parameters.trajectory_filename)
-        
+        self.L.dump('dump1', 'all', 'custom', self.parameters.write_interval, self.parameters.trajectory_filename, 'id', 'type', 'element', 'x', 'y', 'z')
+        self.L.dump_modify('dump1', 'element', 'Cu')
+
         # Define thermo variables
         self.L.variable("step_var", "equal", "step")
         self.L.variable("temp_var", "equal", "temp")
@@ -59,12 +60,13 @@ class System:
         self.L.variable("ke_var", "equal", "ke")
         self.L.variable("etotal_var", "equal", "etotal")
         self.L.variable("press_var", "equal", "press")
+        self.L.variable("natoms_var", "equal", "atoms")
 
         # Set up fix print to log only thermo data to a file without command logs
         self.L.fix("thermo_output", "all", "print", f'{self.parameters.write_interval}',
-                '"${step_var} ${temp_var} ${pe_var} ${ke_var} ${etotal_var} ${press_var}"',
+                '"${step_var} ${natoms_var} ${temp_var} ${pe_var} ${ke_var} ${etotal_var} ${press_var}"',
                 "file", self.parameters.thermo_data_filename, "screen", "no", "title",
-                '"Step Temp PE KE Etotal Press"')
+                '"Step Natoms Temp PE KE Etotal Press"')
 
         # 5) Run algorithms
         if self.parameters.minimize_before_simulation == 'True':

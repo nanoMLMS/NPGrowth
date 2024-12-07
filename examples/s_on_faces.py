@@ -7,8 +7,9 @@ import NPGrowth.functions
 parameters_filename = sys.argv[1]
 
 system = NPGrowth.System(parameters_filename) # Load system with parameters in parameters_filename
+parameters = NPGrowth.SimulationParameters(parameters_filename)
 
-system.run(5000) # Run some steps to termalize system
+system.run(parameters.termalize_steps) # Run some steps to termalize system
 
 # Nedded for later use
 seed_center_of_mass = system.get_center_of_mass() 
@@ -31,7 +32,7 @@ p_xz_front = p_xz_front[::-1]
 to_depo_for_step = [[p_yz_right[i], p_yz_left[i], p_xy_top[i], p_xy_bottom[i], p_xz_front[i], p_xz_back[i]] for i in range(len(points))]
 
 cutoff = system.get_cutoff_from_log()
-for _ in range(50000):
+for _ in range(parameters.n_depo_repeat):
     for targets in to_depo_for_step:
         radius = system.get_further_atom(seed_center_of_mass) + cutoff
         angular_positions = [NPGrowth.functions.cartesian_to_spherical(p[0], p[1], p[2]) for p in targets]
@@ -39,4 +40,4 @@ for _ in range(50000):
         positions = [p + seed_center_of_mass for p in positions]
         targets = [p + seed_center_of_mass for p in targets]
         system.depo(positions, targets)
-        system.run(200)
+        system.run(parameters.steps_to_next_depo)

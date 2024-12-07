@@ -7,3 +7,6 @@ write_interval = 50
 minimize_before_simulation = 'True'
 lattice_constant = 3.6150
 force_treshold = 0.1
+termalize_steps = 5000
+n_depo_repeat = 1000
+steps_to_next_depo = 200
