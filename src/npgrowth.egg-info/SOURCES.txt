@@ -1,0 +1,10 @@
+LICENCE
+README.md
+pyproject.toml
+src/NPGrowth/Parameters.py
+src/NPGrowth/System.py
+src/NPGrowth/__init__.py
+src/npgrowth.egg-info/PKG-INFO
+src/npgrowth.egg-info/SOURCES.txt
+src/npgrowth.egg-info/dependency_links.txt
+src/npgrowth.egg-info/top_level.txt

@@ -1,0 +1,36 @@
+Metadata-Version: 2.2
+Name: npgrowth
+Version: 0.0.1
+Summary: A molecular dynamic simulation package with focus on nanoparticles growth
+Author-email: Leonardo Stefanelli <leostefa002@gmail.com>
+Project-URL: Homepage, https://github.com/nanoMLMS/NPGrowth
+Project-URL: Issues, https://github.com/nanoMLMS/NPGrowth/issues
+Classifier: Programming Language :: Python :: 3
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+License-File: LICENCE
+
+# NPGrowth
+
+NPGrowth is a Python project for growth of nanoparticles.
+
+## Dependencies
+
+Lammps python package compiled with mpi support and mpi should be installed in the host machine.
+
+## Setup instructions
+
+Clone the repository.
+
+```bash
+git clone https://github.com/nanoMLMS/NPGrowth.git
+```
+
+After cloning the repository, you need to initialize the project. This can be done by running the `init.sh` script:
+
+```bash
+./init.sh
+```
+
+## Usage

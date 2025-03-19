@@ -1,0 +1,18 @@
+[project]
+name = "npgrowth"
+version = "0.0.1"
+authors = [
+  { name="Leonardo Stefanelli", email="leostefa002@gmail.com" },
+]
+description = "A molecular dynamic simulation package with focus on nanoparticles growth"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {file = "LICENSE"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/nanoMLMS/NPGrowth"
+Issues = "https://github.com/nanoMLMS/NPGrowth/issues"

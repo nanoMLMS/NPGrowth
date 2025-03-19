@@ -2,6 +2,10 @@
 
 NPGrowth is a Python project for growth of nanoparticles.
 
+## Dependencies
+
+Lammps python package compiled with mpi support and mpi should be installed in the host machine.
+
 ## Setup instructions
 
 Clone the repository.
