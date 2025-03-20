@@ -1,3 +1,0 @@
-[submodule "external/lammps"]
-	path = external/lammps
-	url = https://github.com/lammps/lammps.git

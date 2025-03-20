@@ -6,6 +6,7 @@ import numpy as np
 import numpy.typing as npt
 from mpi4py import MPI
 from ctypes import c_int
+import uuid
 
 comm = MPI.COMM_WORLD
 me = comm.Get_rank()
@@ -29,9 +30,9 @@ class System:
         self._visualization()
 
     def _initialize(self):
-        self.L.command('units metal')           # mass=grams/mole, distance=Angstroms, energy
-        self.L.command('atom_style atomic')     # atoms points with position
-        self.L.command('boundary f f f')        # the simulation box shrink in all directions
+        self.L.command('units metal')           # mass=grams/mole, distance=Angstroms, energy eV
+        self.L.command('atom_style atomic')     # atoms are points with position
+        self.L.command('boundary f f f')        # the simulation box is fixed
         self.L.command('atom_modify map yes')   # map atoms, needed for scatter and gather
     
     def _definition(self):
@@ -84,32 +85,17 @@ class System:
         self.L.command(f' timestep {self.parameters.timestep}')
 
         # Langevin thermostat
-        self.L.command(f'fix mylgv initial_atoms langevin {self.parameters.temperature} {self.parameters.temperature} 1 {random.randint(1, 999999)}')
+        self.L.command(f'fix mylgv initial_atoms langevin {self.parameters.temperature} {self.parameters.temperature} {self.parameters.damping_parameter} {random.randint(1, 999999)}')
 
     def _visualization(self):
+        atomTypesStr = " ".join(self.atomsUniqueTypes)
+        print(atomTypesStr)
         self.L.command(f'thermo {self.parameters.write_interval}')
         self.L.command(f'thermo_style custom step temp pe ke etotal press')
         self.L.command(f'dump dump1 all custom {self.parameters.write_interval} {self.parameters.trajectory_filename} id type element x y z')
-        # self.L.command(f'dump_modify dump1 element Cu') Need to update atom type with different elements
+        self.L.command(f'dump_modify dump1 element {atomTypesStr}')
 
     def addAtoms(self, positions: npt.NDArray[np.float64], velocities: npt.NDArray[np.float64], types: npt.NDArray[np.str_], ids: npt.NDArray[np.int32]):
-        # for (position, type) in zip(positions, types):
-        #     self.L.command(f'''create_atoms 
-        #                    {self.typesToNumber[type]}
-        #                    single
-        #                    {position[0]} {position[1]} {position[2]} 
-        #                    units box''')
-        #     count = 3 # number or elements in per-atom data
-        #     ndata = len(positions) # number of ids
-        #     natoms = self.L.get_natoms()
-        #     ids = (ndata*c_int)(natoms-1, natoms)
-        #     v = self.L.gather_atoms_subset('v', 1, count, ndata, ids)
-        #     for i, velocity in enumerate(velocities):
-        #         i3 = i*3
-        #         v[i3 + 0] = velocity[0]
-        #         v[i3 + 1] = velocity[1]
-        #         v[i3 + 2] = velocity[2]
-        #     self.L.scatter_atoms_subset('v', 1, count, ndata, ids, v)
         numberTypes = [self.typesToNumber[t] for t in types]
         self.L.create_atoms(len(positions), ids, numberTypes, positions.flatten(), velocities.flatten())
         
@@ -124,7 +110,13 @@ class System:
         """
         self.L.command(f'minimize {eTol} {fTol} {maxIter} {maxEval}')
     
-
+    def remove(self, targets, tolerance=0.1):
+        for i, pos in enumerate(targets):
+            region_name = f"target_region_{uuid.uuid4().hex[:8]}" # Define a region for each target position
+            self.L.command(f'region {region_name} sphere {pos[0]} {pos[1]} {pos[2]} {tolerance}') # Add atoms in this region to a group for deletion
+            self.L.command(f'group to_delete region {region_name}')
+        self.L.command('delete_atoms group to_delete') # Delete the atoms in the current region
+    
     def getIndex(self, id):
         atomIds = self.L.numpy.extract_atom('id')
         try:
@@ -163,69 +155,17 @@ class System:
                 ndata = len(reachedIds) # number of ids
                 c_ids = (c_int * ndata)(*reachedIds)
                 f = self.L.gather_atoms_subset('f', 1, count, ndata, c_ids)
-            for i, id in enumerate(reachedIds):
-                i3 = i*3
-                fMag = f[i3 + 0]*f[i3 + 0] + f[i3 + 1]*f[i3 + 1] + f[i3 + 2]*f[i3 + 2]
-                if fMag > self.parameters.force_treshold_reached:
-                    reachedIds = np.delete(reachedIds, np.where(reachedIds == id))
-                    self.L.command(f'group reached id {id}')
-                    self.L.command(f'group initial_atoms id {id}')
+                for i, id in enumerate(reachedIds):
+                    i3 = i*3
+                    fMag = f[i3 + 0]*f[i3 + 0] + f[i3 + 1]*f[i3 + 1] + f[i3 + 2]*f[i3 + 2]
+                    if fMag > self.parameters.force_treshold_reached:
+                        reachedIds = np.delete(reachedIds, np.where(reachedIds == id))
+                        self.L.command(f'group reached id {id}')
+                        self.L.command(f'group initial_atoms id {id}')
 
             self.L.command('run 1 pre no post no')
-
-            
-        # atoms_to_add = len(ids)
-
-        # while atoms_to_add != 0:
-        #     print(atoms_to_add)
-        #     if (nearOtherAtomsCountOld - self.L.extract_variable('near_other_atoms_count')) != 0:
-        #         self.L.command('velocity near_other_atoms set 0 0 0')
-        #         atoms_to_add -= self.L.extract_variable('near_other_atoms_count') - nearOtherAtomsCountOld
-        #         nearOtherAtomsCountOld = self.L.extract_variable('near_other_atoms_count')
-        #         self.L.command('group near_other_atoms clear')
-        #     self.L.command('run 1 pre no post no')
-
-
-        # # Apply actions only to atoms in the highforce_atoms group
-        # self.L.command("""
-        #     velocity highforce_atoms set 0.0 0.0 0.0
-        #     fix freeze highforce_atoms setforce 0.0 0.0 0.0
-        # """)
-
-        # nearAtomsIds: npt.NDArray[np.int32] = np.array([])
         
-        # allIds = self.L.numpy.extract_atom('id')
-        # print(ids[0] in allIds)
-
-        # while len(ids):
-        #     for i, id in enumerate(ids):
-        #         if id in allIds:
-        #             idx = np.where(allIds == id)[0][0]
-        #             print(f'found index: {idx}')
-        #             force = self.L.extract_atom('f')[idx]
-        #             forceMagnitude = np.linalg.norm([force[0], force[1], force[2]])
-        #             print(forceMagnitude)
-        #             if forceMagnitude > self.parameters.force_treshold:
-        #                 self.L.numpy.extract_atom('v')[idx] = [0, 0, 0]
-        #                 ids = np.delete(ids, i)
-        #                 nearAtomsIds = np.append(nearAtomsIds, id)
-        #             self.L.command('run 1 pre no post no')
-
-        #     for i, id in enumerate(nearAtomsIds):
-        #         if id in allIds:
-        #             idx = np.where(allIds == id)[0][0]
-        #             if self.distanceFromSystem(self.L.numpy.extract_atom('x')[idx]) < self.parameters.lattice_constant:
-        #                 self.L.command(f'group initial_atoms id {int(id)}')
-        #                 nearAtomsIds = np.delete(nearAtomsIds, i)
-        
-        # while len(nearAtomsIds):
-        #     for i, id in enumerate(nearAtomsIds):
-        #             idx = self.getIndex(id)
-        #             if idx:
-        #                 if self.distanceFromSystem(self.L.numpy.extract_atom('x')[idx]) < self.parameters.lattice_constant:
-        #                     self.L.command(f'group initial_atoms id {int(id)}')
-        #                     nearAtomsIds = np.delete(nearAtomsIds, i)
-        #     self.L.command('run 1 pre no post no')
+        self.L.command('run 0 pre no')
 
     def distanceFromSystem(self, position):
         distances = np.linalg.norm(self.getPositions() - position, axis=1) # Compute distances between position and all positions
