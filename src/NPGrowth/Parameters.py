@@ -14,7 +14,6 @@ class Parameters:
         # Filenames
         self.seed_filename: str = parameters['seed_filename']
         self.trajectory_filename: str = parameters['trajectory_filename']
-        self.thermo_data_filename: str = parameters['thermo_data_filename']
         self.potential_filename: str = parameters['potential_filename']
 
         # System parameters
@@ -22,8 +21,8 @@ class Parameters:
         self.lattice_constant: float = parameters['lattice_constant']
         self.force_treshold: float = parameters['force_treshold']
         self.force_treshold_reached: float = parameters['force_treshold_reached']
-        
         self.species_masses: list[object] = parameters['species_masses']
+        self.damping_parameter: float = parameters['damping_parameter']
 
         # Dynamics parameters
         self.timestep: float = parameters['timestep']
@@ -57,14 +56,14 @@ class Parameters:
             f"Filenames:\n"
             f"  Seed Filename: {self.seed_filename}\n"
             f"  Trajectory Filename: {self.trajectory_filename}\n"
-            f"  Thermo Data Filename: {self.thermo_data_filename}\n"
             f"  Potential Filename: {self.potential_filename}\n\n"
             f"System Parameters:\n"
             f"  Temperature: {self.temperature}\n"
             f"  Lattice Constant: {self.lattice_constant}\n"
             f"  Force Threshold: {self.force_treshold}\n"
             f"  Force Threshold Reached: {self.force_treshold_reached}\n"
-            f"  Species masses: {self.species_masses}\n\n"
+            f"  Species masses: {self.species_masses}\n"
+            f"  Langevin damping parameter: {self.damping_parameter}\n\n"
             f"Dynamics Parameters:\n"
             f"  Timestep: {self.timestep}\n"
             f"  Write Interval: {self.write_interval}\n"

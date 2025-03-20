@@ -1,18 +1,18 @@
 # Filenames
 seed_filename = 'examples/seeds/Cu4631.xyz'
 trajectory_filename = 'examples/output/isotrope.lammpstrj'
-thermo_data_filename = './output/isotrope_thermo.data'
 potential_filename = 'examples/potentials/Cu_u3.eam'
 
 # System parameters
-temperature = 1000 # Kelvin
+temperature = 300 # Kelvin
 lattice_constant = 3.6150
 force_treshold = 0.001
-force_treshold_reached = 1 # I consider the atom attached
+force_treshold_reached = 20 # I consider the atom attached
+damping_parameter = 1 # Time units
 
 # Dynamics parameters
 timestep = 0.002 # Picoseconds
-write_interval = 10
+write_interval = 500
 termalize_steps = 5000
 n_depo_repeat = 1000
 steps_to_next_depo = 200
